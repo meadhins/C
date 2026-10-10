@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#18181b"/>
+  <circle cx="256" cy="256" r="160" stroke="#3f3f46" stroke-width="24" fill="none"/>
+  <path d="M 256 96 A 160 160 0 0 1 396 336" stroke="#fafafa" stroke-width="24" fill="none" stroke-linecap="round"/>
+  <text x="256" y="276" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="76" font-weight="700" fill="#fafafa" text-anchor="middle">80</text>
+  <text x="256" y="324" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="500" fill="#a1a1aa" text-anchor="middle" letter-spacing="4">UNITS</text>
+</svg>

@@ -1,0 +1,6 @@
+{
+  "name": "Daily Set Tracker",
+  "description": "Minimalist daily unit and set tracker with a target of 80 units.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
