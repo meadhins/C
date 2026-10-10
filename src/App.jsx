@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   getLocalDateKey,
   formatDisplayDate,
@@ -11,6 +11,12 @@ import {
   importDataJson,
   exportDataJson,
   getAllStoredDates,
+  ensurePersistentStorage,
+  downloadBackupFile,
+  canGoPrevDate,
+  canGoNextDate,
+  MIN_DATE_KEY,
+  getMaxDateKey,
 } from './storage.js';
 import TrackerRow from './TrackerRow.jsx';
 import { usePWAInstall } from './usePWAInstall.js';
@@ -21,11 +27,14 @@ export default function App() {
   const [dayData, setDayData] = useState(() => getDayData(todayKey));
   const [editingSet, setEditingSet] = useState(null);
 
-  // Data inspection & backup modal
+  // Data management modal
   const [showDataModal, setShowDataModal] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [dataFeedback, setDataFeedback] = useState('');
   const [storedDatesList, setStoredDatesList] = useState([]);
+  const [isPersisted, setIsPersisted] = useState(false);
+
+  const fileInputRef = useRef(null);
 
   const {
     isInstallable,
@@ -34,6 +43,13 @@ export default function App() {
     setShowGuide,
     triggerInstall,
   } = usePWAInstall();
+
+  // Lock storage on mount so Chrome/Android never evicts it
+  useEffect(() => {
+    ensurePersistentStorage().then((persisted) => {
+      setIsPersisted(persisted);
+    });
+  }, []);
 
   // Reload data whenever selected date changes
   useEffect(() => {
@@ -55,6 +71,10 @@ export default function App() {
 
   const completedUnits = completedCount * 8;
   const isToday = selectedDateKey === todayKey;
+
+  // Date navigation boundaries
+  const canPrev = canGoPrevDate(selectedDateKey);
+  const canNext = canGoNextDate(selectedDateKey);
 
   // Normal entry activation (double click/tap)
   const handleActivate = (setNumber) => {
@@ -84,12 +104,14 @@ export default function App() {
     setEditingSet(null);
   };
 
-  // Date navigation
+  // Date navigation (constrained between Oct 1, 2026 and Tomorrow)
   const handlePrevDay = () => {
+    if (!canPrev) return;
     setSelectedDateKey((curr) => getAdjacentDateKey(curr, -1));
   };
 
   const handleNextDay = () => {
+    if (!canNext) return;
     setSelectedDateKey((curr) => getAdjacentDateKey(curr, 1));
   };
 
@@ -102,7 +124,36 @@ export default function App() {
     setShowDataModal(false);
   };
 
-  // Import / Export actions
+  // File download and file upload handlers
+  const handleDownloadFile = () => {
+    downloadBackupFile();
+    setDataFeedback('Backup file downloaded to your Downloads folder!');
+    setTimeout(() => setDataFeedback(''), 4000);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result;
+      if (typeof content === 'string') {
+        const res = importDataJson(content);
+        if (res.success) {
+          setDayData(getDayData(selectedDateKey));
+          setStoredDatesList(getAllStoredDates());
+          setDataFeedback('Backup file uploaded and restored successfully!');
+          setTimeout(() => setDataFeedback(''), 4000);
+        } else {
+          setDataFeedback('Error uploading file: ' + res.error);
+        }
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Text JSON paste actions
   const handleCustomImportSubmit = (e) => {
     e.preventDefault();
     if (!importJsonText.trim()) return;
@@ -110,7 +161,7 @@ export default function App() {
     if (res.success) {
       setDayData(getDayData(selectedDateKey));
       setStoredDatesList(getAllStoredDates());
-      setDataFeedback('Data restored successfully into your phone storage!');
+      setDataFeedback('Data restored successfully!');
       setImportJsonText('');
       setTimeout(() => setDataFeedback(''), 4000);
     } else {
@@ -122,12 +173,12 @@ export default function App() {
     const json = exportDataJson();
     if (navigator.clipboard) {
       navigator.clipboard.writeText(json).then(() => {
-        setDataFeedback('All stored records copied to clipboard as JSON!');
+        setDataFeedback('All records copied to clipboard!');
         setTimeout(() => setDataFeedback(''), 4000);
       });
     } else {
       setImportJsonText(json);
-      setDataFeedback('All stored records displayed below:');
+      setDataFeedback('Records displayed in text box below:');
     }
   };
 
@@ -161,13 +212,19 @@ export default function App() {
           </button>
         </div>
 
-        {/* Date Navigation */}
+        {/* Date Navigation (constrained between Oct 1, 2026 and Tomorrow) */}
         <div className="w-full flex items-center justify-between text-neutral-700 mb-2">
           <button
             type="button"
             onClick={handlePrevDay}
-            className="w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 hover:text-neutral-950 active:bg-neutral-100 transition cursor-pointer shadow-2xs touch-manipulation"
+            disabled={!canPrev}
+            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
+              canPrev
+                ? 'hover:text-neutral-950 active:bg-neutral-100 cursor-pointer'
+                : 'opacity-30 cursor-not-allowed'
+            }`}
             aria-label="Previous day"
+            title={canPrev ? 'Previous day' : 'Cannot go prior to 1st October 2026'}
           >
             <svg
               className="w-6 h-6"
@@ -202,8 +259,14 @@ export default function App() {
           <button
             type="button"
             onClick={handleNextDay}
-            className="w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 hover:text-neutral-950 active:bg-neutral-100 transition cursor-pointer shadow-2xs touch-manipulation"
+            disabled={!canNext}
+            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
+              canNext
+                ? 'hover:text-neutral-950 active:bg-neutral-100 cursor-pointer'
+                : 'opacity-30 cursor-not-allowed'
+            }`}
             aria-label="Next day"
+            title={canNext ? 'Next day' : 'Cannot navigate beyond tomorrow'}
           >
             <svg
               className="w-6 h-6"
@@ -269,7 +332,7 @@ export default function App() {
           Double-tap empty set to log current time &bull; Press and hold to edit or remove
         </p>
 
-        {/* Prominent Action Buttons: Storage & Backup + Install */}
+        {/* Action Buttons */}
         <div className="mt-4 flex items-center gap-2 flex-wrap justify-center">
           <button
             type="button"
@@ -316,7 +379,7 @@ export default function App() {
           )}
         </div>
 
-        {/* In-App Installation Guide Modal */}
+        {/* Installation Guide Modal */}
         {showGuide && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
@@ -333,25 +396,19 @@ export default function App() {
               {isIOS ? (
                 <div className="mt-3 text-sm text-neutral-600 space-y-2">
                   <p>
-                    1. Tap the <strong>Share</strong> button (the square with an arrow) in the Safari toolbar.
+                    1. Tap the <strong>Share</strong> button in Safari.
                   </p>
                   <p>
-                    2. Scroll down and tap <strong>Add to Home Screen</strong>.
-                  </p>
-                  <p>
-                    3. Tap <strong>Add</strong> in the top-right corner.
+                    2. Tap <strong>Add to Home Screen</strong>.
                   </p>
                 </div>
               ) : (
                 <div className="mt-3 text-sm text-neutral-600 space-y-2">
                   <p>
-                    1. Tap the <strong>three dots (⋮)</strong> menu at the top right of Chrome.
+                    1. Tap the <strong>three dots (⋮)</strong> menu in Chrome.
                   </p>
                   <p>
                     2. Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.
-                  </p>
-                  <p>
-                    3. Confirm <strong>Install</strong> to add it to your home screen.
                   </p>
                 </div>
               )}
@@ -359,7 +416,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowGuide(false)}
-                className="mt-5 w-full rounded-xl bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 active:bg-neutral-950 transition cursor-pointer"
+                className="mt-5 w-full rounded-xl bg-neutral-900 py-2.5 text-sm font-semibold text-white hover:bg-neutral-800 transition cursor-pointer"
               >
                 Got it
               </button>
@@ -367,7 +424,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Data Inspection & Backup Modal */}
+        {/* Data Inspection, File Backup & Restore Modal */}
         {showDataModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
@@ -378,9 +435,16 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-                <h3 className="text-base sm:text-lg font-bold text-neutral-900">
-                  Phone Storage &amp; Backup
-                </h3>
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-neutral-900">
+                    Storage &amp; Backup
+                  </h3>
+                  <div className="text-[11px] text-neutral-500 mt-0.5">
+                    {isPersisted
+                      ? '✓ Storage locked (protected from browser history clearing)'
+                      : 'Saved in local device storage'}
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowDataModal(false)}
@@ -396,15 +460,44 @@ export default function App() {
                 </div>
               )}
 
+              {/* Physical Backup & Restore via JSON Files in Downloads */}
+              <div className="mt-4 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
+                <h4 className="text-sm font-semibold text-neutral-900">
+                  Backup File Management
+                </h4>
+                <p className="mt-1 text-xs text-neutral-500">
+                  Save your backup file directly to your phone's Downloads folder, or upload a backup file to populate a new phone.
+                </p>
+                <div className="mt-3 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadFile}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-neutral-900 text-white font-semibold text-xs hover:bg-neutral-800 active:bg-neutral-950 transition cursor-pointer text-center"
+                  >
+                    📥 Save Backup to Downloads
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 py-2.5 px-3 rounded-xl border border-neutral-300 bg-white text-neutral-800 font-semibold text-xs hover:bg-neutral-50 transition cursor-pointer text-center"
+                  >
+                    📤 Upload Backup File (.json)
+                  </button>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".json,application/json"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </div>
+              </div>
+
               {/* Stored Dates List Inspector */}
               <div className="mt-4 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
                 <h4 className="text-sm font-semibold text-neutral-900">
-                  Recorded Dates in Phone Storage ({storedDatesList.length})
+                  Recorded Dates in Storage ({storedDatesList.length})
                 </h4>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Every date with saved practice on this phone. Tap any date to view:
-                </p>
-
                 {storedDatesList.length > 0 ? (
                   <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
                     {storedDatesList.map((item) => (
@@ -431,41 +524,41 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-neutral-400 italic">
-                    No stored entries recorded yet on this device.
+                  <p className="mt-2 text-xs text-neutral-400 italic">
+                    No dates stored currently.
                   </p>
                 )}
               </div>
 
-              {/* Export Button */}
+              {/* Clipboard Backup */}
               <div className="mt-4">
                 <button
                   type="button"
                   onClick={handleExportData}
-                  className="w-full py-2.5 px-3 rounded-xl border border-neutral-300 text-neutral-700 hover:text-neutral-950 hover:bg-neutral-50 text-xs sm:text-sm font-semibold transition cursor-pointer"
+                  className="w-full py-2 px-3 rounded-xl border border-neutral-300 text-neutral-700 hover:text-neutral-950 hover:bg-neutral-50 text-xs font-semibold transition cursor-pointer"
                 >
-                  Copy All Records to Clipboard (Backup)
+                  Copy All Records to Clipboard
                 </button>
               </div>
 
-              {/* Custom JSON Paste */}
+              {/* Text JSON Paste */}
               <form onSubmit={handleCustomImportSubmit} className="mt-4">
                 <label className="block text-xs font-medium text-neutral-600 mb-1">
-                  Restore / Import Data (JSON):
+                  Or Paste Backup JSON:
                 </label>
                 <textarea
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
-                  placeholder='Paste your backup JSON here...'
-                  rows={3}
-                  className="w-full text-xs font-mono p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  placeholder='Paste backup JSON here...'
+                  rows={2}
+                  className="w-full text-xs font-mono p-2 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
                 <button
                   type="submit"
                   disabled={!importJsonText.trim()}
                   className="mt-2 w-full py-2 px-3 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-800 text-xs font-semibold transition cursor-pointer"
                 >
-                  Restore Pasted Data
+                  Restore Pasted Text
                 </button>
               </form>
 

@@ -1,5 +1,38 @@
 const STORAGE_KEY = 'daily_sets_tracker_data';
 
+// Navigation boundaries:
+// 1. Never go before 1st October 2026
+// 2. Never go forward more than tomorrow (the next day from current local date)
+export const MIN_DATE_KEY = '2026-10-01';
+
+export function getMaxDateKey(today = new Date()) {
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return getLocalDateKey(tomorrow);
+}
+
+export function canGoPrevDate(currentDateKey) {
+  return currentDateKey > MIN_DATE_KEY;
+}
+
+export function canGoNextDate(currentDateKey) {
+  const maxKey = getMaxDateKey();
+  return currentDateKey < maxKey;
+}
+
+// Request Android/Chrome persistent storage so browser history clearing cannot evict it
+export async function ensurePersistentStorage() {
+  if (navigator.storage && navigator.storage.persist) {
+    try {
+      const isPersisted = await navigator.storage.persist();
+      return isPersisted;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 export function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -24,7 +57,16 @@ export function formatDisplayDate(dateKey) {
 export function getAdjacentDateKey(dateKey, deltaDays) {
   const date = parseDateKey(dateKey);
   date.setDate(date.getDate() + deltaDays);
-  return getLocalDateKey(date);
+  const nextKey = getLocalDateKey(date);
+
+  // Enforce min boundary (1st October 2026)
+  if (nextKey < MIN_DATE_KEY) return MIN_DATE_KEY;
+
+  // Enforce max boundary (next day from current date)
+  const maxKey = getMaxDateKey();
+  if (nextKey > maxKey) return maxKey;
+
+  return nextKey;
 }
 
 export function getCurrentLocalTime() {
@@ -112,6 +154,19 @@ export function getAllStoredDates() {
 export function exportDataJson() {
   const allData = loadAllData();
   return JSON.stringify(allData, null, 2);
+}
+
+export function downloadBackupFile() {
+  const json = exportDataJson();
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `practice_tracker_backup_${getLocalDateKey()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export function importDataJson(jsonString) {
