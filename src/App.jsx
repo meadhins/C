@@ -10,7 +10,7 @@ import {
   saveAllData,
   importDataJson,
   exportDataJson,
-  PREPARED_PAST_DATA,
+  getAllStoredDates,
 } from './storage.js';
 import TrackerRow from './TrackerRow.jsx';
 import { usePWAInstall } from './usePWAInstall.js';
@@ -21,10 +21,11 @@ export default function App() {
   const [dayData, setDayData] = useState(() => getDayData(todayKey));
   const [editingSet, setEditingSet] = useState(null);
 
-  // Data management modal
+  // Data inspection & backup modal
   const [showDataModal, setShowDataModal] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [dataFeedback, setDataFeedback] = useState('');
+  const [storedDatesList, setStoredDatesList] = useState([]);
 
   const {
     isInstallable,
@@ -39,6 +40,13 @@ export default function App() {
     setDayData(getDayData(selectedDateKey));
     setEditingSet(null);
   }, [selectedDateKey]);
+
+  // Refresh stored dates list when opening modal
+  useEffect(() => {
+    if (showDataModal) {
+      setStoredDatesList(getAllStoredDates());
+    }
+  }, [showDataModal, dayData]);
 
   // Compute completed sets and total units
   const completedCount = useMemo(() => {
@@ -89,22 +97,20 @@ export default function App() {
     setSelectedDateKey(todayKey);
   };
 
-  // Import / Export actions
-  const handleImportPastData = () => {
-    const current = loadAllData();
-    saveAllData({ ...current, ...PREPARED_PAST_DATA });
-    setSelectedDateKey('2026-10-01'); // Automatically take the user to Oct 1 to view their imported records!
-    setDayData(getDayData('2026-10-01'));
-    setDataFeedback('Imported 5 days of practice! Navigated to Oct 1, 2026.');
+  const handleJumpToDate = (targetDateKey) => {
+    setSelectedDateKey(targetDateKey);
+    setShowDataModal(false);
   };
 
+  // Import / Export actions
   const handleCustomImportSubmit = (e) => {
     e.preventDefault();
     if (!importJsonText.trim()) return;
     const res = importDataJson(importJsonText.trim());
     if (res.success) {
       setDayData(getDayData(selectedDateKey));
-      setDataFeedback('Custom data imported successfully into phone storage!');
+      setStoredDatesList(getAllStoredDates());
+      setDataFeedback('Data restored successfully into your phone storage!');
       setImportJsonText('');
       setTimeout(() => setDataFeedback(''), 4000);
     } else {
@@ -121,14 +127,14 @@ export default function App() {
       });
     } else {
       setImportJsonText(json);
-      setDataFeedback('Exported data shown in text box below:');
+      setDataFeedback('All stored records displayed below:');
     }
   };
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col justify-between items-center py-5 sm:py-8 px-4 sm:px-6 selection:bg-neutral-200 touch-pan-y">
       <main className="w-full max-w-md sm:max-w-lg mx-auto flex flex-col items-center">
-        {/* Top Header Bar with prominent Backup & Import button */}
+        {/* Top Header Bar */}
         <div className="w-full flex items-center justify-between mb-4 pb-2 border-b border-neutral-200/60">
           <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
             Daily Tracker
@@ -151,7 +157,7 @@ export default function App() {
                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
               />
             </svg>
-            Backup &amp; Import
+            Storage &amp; Backup
           </button>
         </div>
 
@@ -186,9 +192,9 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleTodayClick}
-                className="mt-1 text-xs font-medium text-neutral-600 hover:text-neutral-950 underline underline-offset-2 transition cursor-pointer py-0.5 px-2"
+                className="mt-1 text-xs font-semibold text-neutral-700 hover:text-neutral-950 underline underline-offset-2 transition cursor-pointer py-0.5 px-2 bg-neutral-200/60 rounded-full"
               >
-                Return to Today
+                Return to Today ({formatDisplayDate(todayKey)})
               </button>
             )}
           </div>
@@ -263,7 +269,7 @@ export default function App() {
           Double-tap empty set to log current time &bull; Press and hold to edit or remove
         </p>
 
-        {/* Prominent Action Buttons: Backup & Import + Install */}
+        {/* Prominent Action Buttons: Storage & Backup + Install */}
         <div className="mt-4 flex items-center gap-2 flex-wrap justify-center">
           <button
             type="button"
@@ -283,7 +289,7 @@ export default function App() {
                 d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
               />
             </svg>
-            Backup &amp; Import Data
+            Storage &amp; Backup
           </button>
 
           {isInstallable && (
@@ -361,19 +367,19 @@ export default function App() {
           </div>
         )}
 
-        {/* Data Management / Import Modal */}
+        {/* Data Inspection & Backup Modal */}
         {showDataModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
             onClick={() => setShowDataModal(false)}
           >
             <div
-              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-neutral-200 text-left"
+              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl border border-neutral-200 text-left"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
                 <h3 className="text-base sm:text-lg font-bold text-neutral-900">
-                  Backup &amp; Import Data
+                  Phone Storage &amp; Backup
                 </h3>
                 <button
                   type="button"
@@ -390,21 +396,45 @@ export default function App() {
                 </div>
               )}
 
-              {/* 1-Tap Load Past Practice Records */}
+              {/* Stored Dates List Inspector */}
               <div className="mt-4 p-4 rounded-xl bg-neutral-50 border border-neutral-200/80">
                 <h4 className="text-sm font-semibold text-neutral-900">
-                  Load Past Days (Oct 1 – Oct 5)
+                  Recorded Dates in Phone Storage ({storedDatesList.length})
                 </h4>
                 <p className="mt-1 text-xs text-neutral-500">
-                  Instantly writes your 5 days of past practice records into your phone's storage.
+                  Every date with saved practice on this phone. Tap any date to view:
                 </p>
-                <button
-                  type="button"
-                  onClick={handleImportPastData}
-                  className="mt-3 w-full py-2.5 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 active:bg-neutral-950 text-white text-xs sm:text-sm font-semibold transition cursor-pointer"
-                >
-                  Import Oct 1–5 Practice Records
-                </button>
+
+                {storedDatesList.length > 0 ? (
+                  <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
+                    {storedDatesList.map((item) => (
+                      <div
+                        key={item.dateKey}
+                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-neutral-200 text-xs"
+                      >
+                        <div>
+                          <span className="font-semibold text-neutral-800">
+                            {formatDisplayDate(item.dateKey)}
+                          </span>
+                          <span className="ml-2 text-neutral-500">
+                            ({item.completedUnits} / 80 units)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleJumpToDate(item.dateKey)}
+                          className="px-2.5 py-1 rounded bg-neutral-900 text-white font-medium hover:bg-neutral-800 text-xs transition cursor-pointer"
+                        >
+                          View
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-neutral-400 italic">
+                    No stored entries recorded yet on this device.
+                  </p>
+                )}
               </div>
 
               {/* Export Button */}
@@ -412,21 +442,21 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleExportData}
-                  className="w-full py-2 px-3 rounded-xl border border-neutral-300 text-neutral-700 hover:text-neutral-950 hover:bg-neutral-50 text-xs sm:text-sm font-medium transition cursor-pointer"
+                  className="w-full py-2.5 px-3 rounded-xl border border-neutral-300 text-neutral-700 hover:text-neutral-950 hover:bg-neutral-50 text-xs sm:text-sm font-semibold transition cursor-pointer"
                 >
-                  Copy All Stored Data (Backup)
+                  Copy All Records to Clipboard (Backup)
                 </button>
               </div>
 
               {/* Custom JSON Paste */}
               <form onSubmit={handleCustomImportSubmit} className="mt-4">
                 <label className="block text-xs font-medium text-neutral-600 mb-1">
-                  Custom Import / Paste Data (JSON):
+                  Restore / Import Data (JSON):
                 </label>
                 <textarea
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
-                  placeholder='{"2026-10-01": {"1": "06:55", ...}}'
+                  placeholder='Paste your backup JSON here...'
                   rows={3}
                   className="w-full text-xs font-mono p-2.5 border border-neutral-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 />
@@ -435,7 +465,7 @@ export default function App() {
                   disabled={!importJsonText.trim()}
                   className="mt-2 w-full py-2 px-3 rounded-xl border border-neutral-300 bg-white hover:bg-neutral-50 disabled:opacity-40 text-neutral-800 text-xs font-semibold transition cursor-pointer"
                 >
-                  Import Pasted Data
+                  Restore Pasted Data
                 </button>
               </form>
 

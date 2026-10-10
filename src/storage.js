@@ -95,6 +95,20 @@ export function updateDayEntry(dateKey, setNumber, timeValue) {
   return getDayData(dateKey);
 }
 
+export function getAllStoredDates() {
+  const allData = loadAllData();
+  const dates = Object.keys(allData).sort();
+  return dates.map((dateKey) => {
+    const day = allData[dateKey] || {};
+    const filled = Object.values(day).filter(Boolean).length;
+    return {
+      dateKey,
+      completedSets: filled,
+      completedUnits: filled * 8,
+    };
+  }).filter((item) => item.completedSets > 0);
+}
+
 export function exportDataJson() {
   const allData = loadAllData();
   return JSON.stringify(allData, null, 2);
@@ -114,58 +128,3 @@ export function importDataJson(jsonString) {
     return { success: false, error: 'Could not parse JSON: ' + err.message };
   }
 }
-
-// Prepared data from user records (Oct 1 to Oct 5, 2026) for easy 1-click import into device storage
-export const PREPARED_PAST_DATA = {
-  "2026-10-01": {
-    "1": "06:55",
-    "2": "06:55",
-    "3": "07:58",
-    "4": "07:58",
-    "5": "09:31",
-    "6": "09:31",
-    "7": "09:52",
-    "8": "09:52",
-    "9": "10:01"
-  },
-  "2026-10-02": {
-    "1": "13:21",
-    "2": "13:21",
-    "3": "13:31",
-    "4": "17:03",
-    "5": "17:03",
-    "6": "17:14",
-    "7": "17:24",
-    "8": "17:32"
-  },
-  "2026-10-03": {
-    "1": "04:04",
-    "2": "04:05",
-    "3": "04:13",
-    "4": "06:58",
-    "5": "06:58",
-    "6": "07:56",
-    "7": "07:56",
-    "8": "15:10",
-    "9": "15:10"
-  },
-  "2026-10-04": {
-    "1": "04:23",
-    "2": "04:23",
-    "3": "16:49",
-    "4": "16:49",
-    "5": "16:56",
-    "6": "17:05",
-    "7": "19:03"
-  },
-  "2026-10-05": {
-    "1": "15:35",
-    "2": "15:35",
-    "3": "15:57",
-    "4": "16:16",
-    "5": "16:16",
-    "6": "17:30",
-    "7": "18:12",
-    "8": "18:12"
-  }
-};
