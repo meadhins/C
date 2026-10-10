@@ -13,8 +13,6 @@ import {
   getAllStoredDates,
   ensurePersistentStorage,
   downloadBackupFile,
-  canGoPrevDate,
-  canGoNextDate,
   MIN_DATE_KEY,
   getMaxDateKey,
 } from './storage.js';
@@ -27,13 +25,15 @@ export default function App() {
   const [dayData, setDayData] = useState(() => getDayData(todayKey));
   const [editingSet, setEditingSet] = useState(null);
 
-  // Data management modal
+  // Hidden Data management modal
   const [showDataModal, setShowDataModal] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [dataFeedback, setDataFeedback] = useState('');
   const [storedDatesList, setStoredDatesList] = useState([]);
   const [isPersisted, setIsPersisted] = useState(false);
 
+  // Long press on header to reveal storage modal (1.8s)
+  const headerPressTimer = useRef(null);
   const fileInputRef = useRef(null);
 
   const {
@@ -43,6 +43,15 @@ export default function App() {
     setShowGuide,
     triggerInstall,
   } = usePWAInstall();
+
+  // Date boundaries:
+  // Cannot go before 2026-10-01
+  // Cannot go beyond tomorrow
+  const minDateKey = MIN_DATE_KEY;
+  const maxDateKey = useMemo(() => getMaxDateKey(), []);
+
+  const canPrev = selectedDateKey > minDateKey;
+  const canNext = selectedDateKey < maxDateKey;
 
   // Lock storage on mount so Chrome/Android never evicts it
   useEffect(() => {
@@ -72,10 +81,6 @@ export default function App() {
   const completedUnits = completedCount * 8;
   const isToday = selectedDateKey === todayKey;
 
-  // Date navigation boundaries
-  const canPrev = canGoPrevDate(selectedDateKey);
-  const canNext = canGoNextDate(selectedDateKey);
-
   // Normal entry activation (double click/tap)
   const handleActivate = (setNumber) => {
     const currentTime = getCurrentLocalTime();
@@ -104,15 +109,21 @@ export default function App() {
     setEditingSet(null);
   };
 
-  // Date navigation (constrained between Oct 1, 2026 and Tomorrow)
+  // Date navigation strictly clamped
   const handlePrevDay = () => {
-    if (!canPrev) return;
-    setSelectedDateKey((curr) => getAdjacentDateKey(curr, -1));
+    if (selectedDateKey <= minDateKey) return;
+    setSelectedDateKey((curr) => {
+      const prev = getAdjacentDateKey(curr, -1);
+      return prev < minDateKey ? minDateKey : prev;
+    });
   };
 
   const handleNextDay = () => {
-    if (!canNext) return;
-    setSelectedDateKey((curr) => getAdjacentDateKey(curr, 1));
+    if (selectedDateKey >= maxDateKey) return;
+    setSelectedDateKey((curr) => {
+      const next = getAdjacentDateKey(curr, 1);
+      return next > maxDateKey ? maxDateKey : next;
+    });
   };
 
   const handleTodayClick = () => {
@@ -124,10 +135,32 @@ export default function App() {
     setShowDataModal(false);
   };
 
+  // Header long press handlers (2 seconds)
+  const startHeaderPress = () => {
+    if (headerPressTimer.current) clearTimeout(headerPressTimer.current);
+    headerPressTimer.current = setTimeout(() => {
+      if (navigator.vibrate) {
+        try {
+          navigator.vibrate(50);
+        } catch {
+          // ignore
+        }
+      }
+      setShowDataModal(true);
+    }, 1800);
+  };
+
+  const cancelHeaderPress = () => {
+    if (headerPressTimer.current) {
+      clearTimeout(headerPressTimer.current);
+      headerPressTimer.current = null;
+    }
+  };
+
   // File download and file upload handlers
   const handleDownloadFile = () => {
     downloadBackupFile();
-    setDataFeedback('Backup file downloaded to your Downloads folder!');
+    setDataFeedback('Backup file saved to your phone Downloads folder!');
     setTimeout(() => setDataFeedback(''), 4000);
   };
 
@@ -142,10 +175,10 @@ export default function App() {
         if (res.success) {
           setDayData(getDayData(selectedDateKey));
           setStoredDatesList(getAllStoredDates());
-          setDataFeedback('Backup file uploaded and restored successfully!');
+          setDataFeedback('Backup file uploaded and populated successfully!');
           setTimeout(() => setDataFeedback(''), 4000);
         } else {
-          setDataFeedback('Error uploading file: ' + res.error);
+          setDataFeedback('Error: ' + res.error);
         }
       }
     };
@@ -183,51 +216,40 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 flex flex-col justify-between items-center py-5 sm:py-8 px-4 sm:px-6 selection:bg-neutral-200 touch-pan-y">
-      <main className="w-full max-w-md sm:max-w-lg mx-auto flex flex-col items-center">
-        {/* Top Header Bar */}
-        <div className="w-full flex items-center justify-between mb-4 pb-2 border-b border-neutral-200/60">
-          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+    <div className="h-dvh max-h-dvh w-full bg-neutral-50 text-neutral-900 flex flex-col justify-between items-center py-2 sm:py-4 px-3 sm:px-6 selection:bg-neutral-200 overflow-hidden touch-pan-y">
+      <main className="w-full max-w-md sm:max-w-lg mx-auto flex flex-col items-center flex-1 justify-between">
+        {/* Top Header Bar: Long press 2s reveals hidden Storage & Backup */}
+        <div
+          onMouseDown={startHeaderPress}
+          onMouseUp={cancelHeaderPress}
+          onMouseLeave={cancelHeaderPress}
+          onTouchStart={startHeaderPress}
+          onTouchEnd={cancelHeaderPress}
+          onTouchCancel={cancelHeaderPress}
+          className="w-full flex items-center justify-center py-0.5 select-none cursor-pointer"
+          title="Press and hold for 2s for Storage & Backup"
+        >
+          <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-neutral-400">
             Daily Tracker
           </span>
-          <button
-            type="button"
-            onClick={() => setShowDataModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-neutral-200/90 hover:border-neutral-400 text-xs font-semibold text-neutral-700 hover:text-neutral-950 shadow-2xs transition cursor-pointer"
-          >
-            <svg
-              className="w-3.5 h-3.5 text-neutral-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-              />
-            </svg>
-            Storage &amp; Backup
-          </button>
         </div>
 
-        {/* Date Navigation (constrained between Oct 1, 2026 and Tomorrow) */}
-        <div className="w-full flex items-center justify-between text-neutral-700 mb-2">
+        {/* Date Navigation (strictly clamped between Oct 1, 2026 and Tomorrow) */}
+        <div className="w-full flex items-center justify-between text-neutral-700 my-1">
           <button
             type="button"
             onClick={handlePrevDay}
             disabled={!canPrev}
-            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
               canPrev
                 ? 'hover:text-neutral-950 active:bg-neutral-100 cursor-pointer'
-                : 'opacity-30 cursor-not-allowed'
+                : 'opacity-25 cursor-not-allowed'
             }`}
             aria-label="Previous day"
             title={canPrev ? 'Previous day' : 'Cannot go prior to 1st October 2026'}
           >
             <svg
-              className="w-6 h-6"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -242,16 +264,16 @@ export default function App() {
           </button>
 
           <div className="flex flex-col items-center">
-            <span className="text-xl sm:text-2xl font-bold tracking-tight text-neutral-900">
+            <span className="text-lg sm:text-xl font-bold tracking-tight text-neutral-900">
               {formatDisplayDate(selectedDateKey)}
             </span>
             {!isToday && (
               <button
                 type="button"
                 onClick={handleTodayClick}
-                className="mt-1 text-xs font-semibold text-neutral-700 hover:text-neutral-950 underline underline-offset-2 transition cursor-pointer py-0.5 px-2 bg-neutral-200/60 rounded-full"
+                className="text-[11px] font-semibold text-neutral-600 hover:text-neutral-950 underline underline-offset-2 transition cursor-pointer px-2"
               >
-                Return to Today ({formatDisplayDate(todayKey)})
+                Today
               </button>
             )}
           </div>
@@ -260,16 +282,16 @@ export default function App() {
             type="button"
             onClick={handleNextDay}
             disabled={!canNext}
-            className={`w-11 h-11 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white border border-neutral-200/90 shadow-2xs touch-manipulation transition ${
               canNext
                 ? 'hover:text-neutral-950 active:bg-neutral-100 cursor-pointer'
-                : 'opacity-30 cursor-not-allowed'
+                : 'opacity-25 cursor-not-allowed'
             }`}
             aria-label="Next day"
             title={canNext ? 'Next day' : 'Cannot navigate beyond tomorrow'}
           >
             <svg
-              className="w-6 h-6"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -284,13 +306,13 @@ export default function App() {
           </button>
         </div>
 
-        {/* Progress Display: Large, Calm & Prominent */}
-        <div className="my-3 sm:my-4 text-center">
-          <div className="text-5xl sm:text-6xl font-semibold tracking-tight text-neutral-900 tabular-nums">
+        {/* Progress Display: Compact and Prominent */}
+        <div className="my-1 text-center">
+          <div className="text-3xl sm:text-4xl font-semibold tracking-tight text-neutral-900 tabular-nums">
             {completedUnits} / 80
           </div>
           {/* Progress Bar */}
-          <div className="w-64 sm:w-72 h-2 bg-neutral-200/80 rounded-full mx-auto mt-3 overflow-hidden">
+          <div className="w-52 sm:w-60 h-1.5 bg-neutral-200/80 rounded-full mx-auto mt-1.5 overflow-hidden">
             <div
               className="h-full bg-neutral-900 transition-all duration-300"
               style={{ width: `${Math.min(100, (completedUnits / 80) * 100)}%` }}
@@ -298,15 +320,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* Column Headers & Ten Sets Table */}
-        <div className="w-full bg-white border border-neutral-200/90 rounded-2xl shadow-xs overflow-hidden">
-          <div className="w-full flex items-center justify-between px-4 sm:px-5 py-3 text-xs sm:text-sm uppercase tracking-wider font-medium text-neutral-400 bg-neutral-100/70 border-b border-neutral-200/80">
-            <span className="w-14 text-left text-neutral-400 font-normal">Set</span>
-            <span className="w-16 text-center text-neutral-700 font-semibold">Units</span>
+        {/* Column Headers & Ten Sets Table (Compact, 100% visible on screen) */}
+        <div className="w-full bg-white border border-neutral-200/90 rounded-2xl shadow-xs overflow-hidden my-1">
+          <div className="w-full flex items-center justify-between px-3.5 sm:px-4 py-1.5 text-xs uppercase tracking-wider font-medium text-neutral-400 bg-neutral-100/70 border-b border-neutral-200/80">
+            <span className="w-12 text-left text-neutral-400 font-normal">Set</span>
+            <span className="w-14 text-center text-neutral-700 font-semibold">Units</span>
             <span className="flex-1 text-right text-neutral-700 font-semibold">Time</span>
           </div>
 
-          <div className="divide-y divide-neutral-200/70">
+          <div className="divide-y divide-neutral-200/60">
             {Array.from({ length: 10 }, (_, index) => {
               const setNumber = String(index + 1);
               return (
@@ -328,56 +350,9 @@ export default function App() {
         </div>
 
         {/* Secondary interaction hint */}
-        <p className="mt-3 text-center text-xs text-neutral-400">
-          Double-tap empty set to log current time &bull; Press and hold to edit or remove
+        <p className="text-center text-[10px] sm:text-xs text-neutral-400 py-0.5">
+          Double-tap empty set to log &bull; Press &amp; hold row to edit
         </p>
-
-        {/* Action Buttons */}
-        <div className="mt-4 flex items-center gap-2 flex-wrap justify-center">
-          <button
-            type="button"
-            onClick={() => setShowDataModal(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-neutral-300 bg-white text-neutral-800 hover:text-neutral-950 hover:bg-neutral-50 active:bg-neutral-100 transition shadow-2xs cursor-pointer"
-          >
-            <svg
-              className="w-4 h-4 text-neutral-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-              />
-            </svg>
-            Storage &amp; Backup
-          </button>
-
-          {isInstallable && (
-            <button
-              type="button"
-              onClick={triggerInstall}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-semibold rounded-xl border border-neutral-300 bg-white text-neutral-800 hover:text-neutral-950 hover:bg-neutral-50 active:bg-neutral-100 transition shadow-2xs cursor-pointer"
-            >
-              <svg
-                className="w-4 h-4 text-neutral-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2.2"
-                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                />
-              </svg>
-              Install as App
-            </button>
-          )}
-        </div>
 
         {/* Installation Guide Modal */}
         {showGuide && (
@@ -424,7 +399,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Data Inspection, File Backup & Restore Modal */}
+        {/* Hidden Data Inspection, File Backup & Restore Modal (Triggered by 2s header hold) */}
         {showDataModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
@@ -441,7 +416,7 @@ export default function App() {
                   </h3>
                   <div className="text-[11px] text-neutral-500 mt-0.5">
                     {isPersisted
-                      ? '✓ Storage locked (protected from browser history clearing)'
+                      ? '✓ Storage locked in device hardware memory'
                       : 'Saved in local device storage'}
                   </div>
                 </div>
@@ -499,7 +474,7 @@ export default function App() {
                   Recorded Dates in Storage ({storedDatesList.length})
                 </h4>
                 {storedDatesList.length > 0 ? (
-                  <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto">
+                  <div className="mt-3 space-y-1.5 max-h-44 overflow-y-auto">
                     {storedDatesList.map((item) => (
                       <div
                         key={item.dateKey}
@@ -562,6 +537,19 @@ export default function App() {
                 </button>
               </form>
 
+              {/* PWA Install Button inside modal if not installed */}
+              {isInstallable && (
+                <div className="mt-4 pt-3 border-t border-neutral-100">
+                  <button
+                    type="button"
+                    onClick={triggerInstall}
+                    className="w-full py-2 px-3 rounded-xl bg-neutral-100 text-neutral-800 text-xs font-semibold hover:bg-neutral-200 transition cursor-pointer"
+                  >
+                    Install as Phone App
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setShowDataModal(false)}
@@ -573,10 +561,6 @@ export default function App() {
           </div>
         )}
       </main>
-
-      <footer className="w-full text-center text-xs text-neutral-400 mt-6">
-        Daily target: 80 units
-      </footer>
     </div>
   );
 }

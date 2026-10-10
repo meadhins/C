@@ -42,7 +42,6 @@ export default function TrackerRow({
     if (isEditing) return;
     if (e.button !== 0) return; // Left click only
 
-    // Long press only edits completed rows
     if (time) {
       mouseStartPos.current = { x: e.clientX, y: e.clientY };
       longPressFired.current = false;
@@ -81,7 +80,6 @@ export default function TrackerRow({
       longPressFired.current = false;
       return;
     }
-    // Double click enters current time for empty row
     if (!time) {
       onActivate(setNumber);
     }
@@ -96,7 +94,6 @@ export default function TrackerRow({
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
     longPressFired.current = false;
 
-    // Long press is used to edit completed rows
     if (time) {
       setIsPressing(true);
       longPressTimer.current = setTimeout(() => {
@@ -142,7 +139,6 @@ export default function TrackerRow({
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTime.current;
 
-    // Double-tap immediately entries current time for empty row
     if (timeSinceLastTap > 0 && timeSinceLastTap < 350) {
       lastTapTime.current = 0;
       if (!time) {
@@ -150,7 +146,6 @@ export default function TrackerRow({
       }
     } else {
       lastTapTime.current = now;
-      // Single tap does NOT trigger edit - prevents accidental edits while scrolling
     }
   };
 
@@ -186,7 +181,7 @@ export default function TrackerRow({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className={`group relative flex items-center justify-between min-h-[60px] sm:min-h-[66px] px-4 sm:px-5 py-3.5 select-none transition-colors border-b border-neutral-200/80 last:border-b-0 ${
+      className={`group relative flex items-center justify-between min-h-[38px] sm:min-h-[44px] px-3.5 sm:px-4 py-1.5 sm:py-2 select-none transition-colors border-b border-neutral-200/70 last:border-b-0 ${
         isEditing
           ? 'bg-neutral-100/95 ring-1 ring-inset ring-neutral-300'
           : isPressing
@@ -196,12 +191,12 @@ export default function TrackerRow({
       style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
     >
       {/* Set Number: Muted grey index */}
-      <div className="w-14 text-left tabular-nums text-base sm:text-lg font-normal text-neutral-400 tracking-tight shrink-0">
+      <div className="w-12 text-left tabular-nums text-sm sm:text-base font-normal text-neutral-400 tracking-tight shrink-0">
         {setNumber}
       </div>
 
       {/* Unit Count (always 8) */}
-      <div className="w-16 text-center tabular-nums text-lg sm:text-xl font-semibold text-neutral-800 shrink-0">
+      <div className="w-14 text-center tabular-nums text-base sm:text-lg font-semibold text-neutral-800 shrink-0">
         {units}
       </div>
 
@@ -221,11 +216,11 @@ export default function TrackerRow({
               autoFocus
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              className="bg-white border border-neutral-300 rounded-lg px-2.5 py-1.5 text-base sm:text-sm tabular-nums text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900 shadow-2xs font-medium"
+              className="bg-white border border-neutral-300 rounded-lg px-2 py-1 text-xs sm:text-sm tabular-nums text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900 shadow-2xs font-medium"
             />
             <button
               type="submit"
-              className="px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:bg-neutral-950 transition cursor-pointer"
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 active:bg-neutral-950 transition cursor-pointer"
               title="Save time"
             >
               Set
@@ -233,7 +228,7 @@ export default function TrackerRow({
             <button
               type="button"
               onClick={() => onClearEdit(setNumber)}
-              className="px-2.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 active:bg-red-200 transition cursor-pointer"
+              className="px-2 py-1 text-xs font-semibold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 active:bg-red-200 transition cursor-pointer"
               title="Remove entry"
             >
               Remove
@@ -241,19 +236,19 @@ export default function TrackerRow({
             <button
               type="button"
               onClick={onCancelEdit}
-              className="p-1.5 text-sm text-neutral-400 hover:text-neutral-700 active:text-neutral-900 transition cursor-pointer"
+              className="p-1 text-xs text-neutral-400 hover:text-neutral-700 active:text-neutral-900 transition cursor-pointer"
               title="Cancel"
             >
               ✕
             </button>
           </form>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span
-              className={`tabular-nums text-base sm:text-lg tracking-tight ${
+              className={`tabular-nums text-sm sm:text-base tracking-tight ${
                 isCompleted
                   ? 'font-medium text-neutral-900'
-                  : 'text-neutral-300 text-2xl font-light'
+                  : 'text-neutral-300 text-lg font-light'
               }`}
             >
               {formattedDisplay}
